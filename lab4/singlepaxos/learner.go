@@ -2,18 +2,27 @@
 
 package singlepaxos
 
-import "fmt"
+
+
 
 // Learner represents a learner as defined by the single-decree Paxos
 // algorithm.
 type Learner struct {
-	id         int
-	nrOfNodes  int
-	vval       Value
-	learnIn    chan Learn
-	setOfNodes map[int]Learn
-	valueOut   chan<- Value
-	stop       chan struct{}
+	ProcessId int
+	NumOfProcesses int
+	valueOut chan<- Value
+
+	learnIn chan Learn
+	stop   chan struct{}
+
+	PreviousSender int
+	LearnMesegesRecieved int
+	quorumRound Round
+	quorumVal Value
+	SameValSameRoundCount int
+
+	//TODO(student): Task 2 and 3 - algorithm and distributed implementation
+	// Add needed fields
 }
 
 // NewLearner returns a new single-decree Paxos learner. It takes the
@@ -27,19 +36,17 @@ type Learner struct {
 // i.e. decided by the Paxos nodes.
 func NewLearner(id int, nrOfNodes int, valueOut chan<- Value) *Learner {
 	//TODO(student): Task 2 and 3 - algorithm and distributed implementation
-	setOfNodes := make(map[int]Learn)
-
-	for node := 0; node < nrOfNodes; node++ {
-		setOfNodes[node] = Learn{}
-	}
-
 	return &Learner{
-		id:         id,
-		nrOfNodes:  nrOfNodes,
-		setOfNodes: setOfNodes,
-		valueOut:   valueOut,
-		learnIn:    make(chan Learn, 8),
-		stop:       make(chan struct{}),
+		ProcessId: id,
+		NumOfProcesses: nrOfNodes,
+		valueOut: valueOut,
+		learnIn:   make(chan Learn, 8),
+		stop:   make(chan struct{}),
+		PreviousSender: -1,
+		LearnMesegesRecieved : 0,
+		quorumRound : Round(0),
+		SameValSameRoundCount: -1,
+
 	}
 }
 
@@ -49,15 +56,15 @@ func (l *Learner) Start() {
 	go func() {
 		for {
 			select {
-			case learn := <-l.learnIn:
-				value, output := l.handleLearn(learn)
+			case lrn := <-l.learnIn:
+				val, output := l.handleLearn(lrn)
 				if output {
-					fmt.Println("<-CREATING", value)
-					l.valueOut <- value
+					l.valueOut <- val
 				}
 			case <-l.stop:
 				return
 			}
+			//TODO(student): Task 3 - distributed implementation
 		}
 	}()
 }
@@ -65,11 +72,13 @@ func (l *Learner) Start() {
 // Stop stops l's main run loop.
 func (l *Learner) Stop() {
 	l.stop <- struct{}{}
+	//TODO(student): Task 3 - distributed implementation
 }
 
 // DeliverLearn delivers learn lrn to learner l.
 func (l *Learner) DeliverLearn(lrn Learn) {
 	l.learnIn <- lrn
+	//TODO(student): Task 3 - distributed implementation
 }
 
 // Internal: handleLearn processes learn lrn according to the single-decree
@@ -78,19 +87,29 @@ func (l *Learner) DeliverLearn(lrn Learn) {
 // decided value. If handleLearn returns false as output, then val will have
 // its zero value.
 func (l *Learner) handleLearn(learn Learn) (val Value, output bool) {
-	l.setOfNodes[learn.From] = learn
-	tmpMapValue := make(map[int]Value)
-	quorum := l.nrOfNodes / 2
-	output = false
+	quorum := l.NumOfProcesses/2
 
-	for i, node := range l.setOfNodes {
-		if learn.Rnd == node.Rnd {
-			tmpMapValue[i] = node.Val
-			l.vval = node.Val
-		}
+	if learn.From != l.PreviousSender{  // count only unique senders of learn messages
+		l.LearnMesegesRecieved++
 	}
-	if len(tmpMapValue) > quorum {
-		output = true
+	l.PreviousSender = learn.From
+
+	if learn.Rnd != l.quorumRound || learn.Val != l.quorumVal { // Count the amount of same Value an Round Learns
+		l.SameValSameRoundCount = 0
+		l.quorumRound = learn.Rnd
+		l.quorumVal = learn.Val
 	}
-	return l.vval, output
+	l.SameValSameRoundCount ++
+
+
+	if l.LearnMesegesRecieved > quorum && l.SameValSameRoundCount > quorum{
+		l.LearnMesegesRecieved = 0
+		return l.quorumVal, true
+	}else {
+		return ZeroValue, false
+	}
+	//TODO(student): Task 2 - algorithm implementation
+
 }
+
+//TODO(student): Add any other unexported methods needed.

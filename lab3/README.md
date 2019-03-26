@@ -5,7 +5,7 @@
 | Lab 3:		| Failure Detector and Leader Election	|
 | -------------------- 	| ------------------------------------- |
 | Subject: 		| DAT520 Distributed Systems 		|
-| Deadline:		| Friday Feb 9 2018 12:00		|
+| Deadline:		| Thursday Feb 14 2019 12:00		|
 | Expected effort:	| 20 hours 				|
 | Grading: 		| Pass/fail + Lab Exam 			|
 | Submission: 		| Group					|
@@ -37,12 +37,12 @@ their own sections.
 1. **Failure Detector module:** Implement the eventually perfect failure
    detector algorithm from the textbook. Use the provided skeleton code and
    unit tests. This implementation will be verified by Autograder. The task
-   represents 25% of the total lab.
+   represents 25% of the total lab. 
 
 2. **Leader Detector module:** Implement the eventual leader detector algorithm
    from the textbook. Use the provided skeleton code and unit tests. This
    implementation will also be verified by Autograder. The task represents 25%
-   of the total lab.
+   of the total lab. 
 
 3. **Distributed Leader Detection:** Implement a distributed application using
    the two modules described above. The application should elect a leader among
@@ -54,15 +54,15 @@ their own sections.
 
 ## Prerequisites
 
-You need to register your group on [Autograder](http://autograder.ux.uis.no/)
+You need to register your group on [Autograder](https://ag3.ux.uis.no/)
 before you begin this assignment as it constitutes a group project. This can be
-done on your [course page](http://autograder.ux.uis.no/course/uis-dat520-s18) in
-the tab "Group". Select the students you are collaborating with and submit the
+done on your [course page](https://ag3.ux.uis.no/app/student/courses/3/members) in
+the tab "Members". Select the students you are collaborating with and submit the
 group selection. **Only one group member should do this.** Please don't create
 a group unless you have agreed with the other member(s) up front.
 
 If you don't have a group partner yet, you may take a look at the [Partner
-match-up](https://github.com/uis-dat520-s18/course-info/blob/master/group-partner-hunt.md)
+match-up](https://github.com/uis-dat520-s2019/course-info/blob/master/group-partner-hunt.md)
 page. If you see a person listed there that you wish to work with, please
 connect with him/her directly and agree to submit a group composition
 accordingly following the above instructions.
@@ -78,24 +78,28 @@ valid reason for this. Four members will not be allowed.
 **Important 2:** Your group will only be approved when all members have passed
 both lab assignment 1 and 2.
 
-For the group project we will publish the assignments to a new repository
-called `glabs` to avoid conflicts between each group member's individual
-repositories. Each group will also get access to a shared group repository when
-your group has been approved. This will be named `group#`, where `#` is
-replaced with your group number. You will receive an email notification when
+For the group project you should create a copy of the assignment repository. 
+Each group will get access to a shared group repository when your group has 
+been approved. This will be named `group#`, where `#` is replaced with your 
+group number. You will receive an email notification when
 Autograder creates a new team on GitHub. Refer to the procedure described in
-[lab 1](https://github.com/uis-dat520-s18/labs/tree/master/lab1#go-assignments) for
+[lab 1](https://github.com/uis-dat520-s2019/assignments/tree/master/lab1#go-assignments) for
 instructions on how to setup this repository on your local machine.  Follow
-steps 1 to 7 in this procedure, but use the new names `glabs` and `group#`
-instead of `labs` and `username-labs`.
+steps 1 to 7 in this procedure, but use the new name `group#`
+instead of `username-labs`.
 
 A short list of relevant commands are provided below:
 
 ```shell
-go get github.com/uis-dat520-s18/glabs
-cd $GOPATH/src/uis-dat520-s18/glabs
-# Replace the name group1 with your group repository
-git remote add labs https://github.com/uis-dat520-s18/group1
+# Create environment variables used for subsequent labs
+# Remember to add these to your ~/.profile or ~/.bashrc file
+export dat520="github.com/uis-dat520-s2019"
+export gpath=$dat520/"<groupname>" // replace <groupname> with your group name on Autograder
+
+git clone https://$dat520/assignments.git $GOPATH/src/$gpath
+cd $GOPATH/src/$gpath
+git remote add labs https://$gpath
+git pull labs master
 
 # Run this command to get new or updated assignments
 git pull origin master
@@ -107,10 +111,10 @@ git push labs
 
 ## Failure Detector (25%)
 
-A Failure Detector can be implemented either using a
+A Failure Detector can be implemented either using a 
 
-1. request/reply approach or a
-2. lease-based approach.
+1. request/reply approach or a 
+2. lease-based approach. 
 
 A Failure Detector that follows the request/reply approach is shown in
 Algorithm 2.7 in the textbook. It sends a `HeartbeatRequest` to all other
@@ -378,7 +382,7 @@ Other information:
   for this implementation is defined using the node identifiers. The highest
   ranking node is defined to be the node with the highest id (i.e. the highest
   integer).
-
+ 
 * Negative node ids should be ignored by the leader detector. An exception is
   the special identifier constant `UnknownID` in `defs.go` with value `-1`.
 
@@ -395,7 +399,7 @@ Other information:
 
 In this task you will implement a complete distributed application using the
 previously implemented failure detector and leader detector, running on a real
-network stack.
+network stack. 
 
 The distributed application will simply subscribe to leader change events
 from the leader detector module, and print to screen whenever there is a
@@ -427,7 +431,7 @@ tested or verified using the Autograder.
    provoke such an event by stopping your application on one or more of the
    machines.
 
-Additional tips and information:
+Additional tips and information: 
 
 * You may choose the type of transport layer protocol to use for network
   communication, e.g. TCP or UDP.
@@ -436,7 +440,7 @@ Additional tips and information:
   choose a few nodes in the lab and use their DNS name or IP address and port
   number to statically set up your group of machines. These can either be
   hardcoded in your source code, or read from a configuration file.
-
+  
 * You will need to encode/decode the `Heartbeat` messages to a data-interchange
   format when sending and receiving them on the network. You may use a text
   encoding such as JSON, or a binary encoding such as for example
@@ -466,5 +470,5 @@ implementation fulfills the previously listed specification. The task will be
 verified by a member of the teaching staff during lab hours.
 
 Also see the [Grading and Collaboration
-Policy](https://github.com/uis-dat520-s18/course-info/policy.md) document for
+Policy](https://github.com/uis-dat520/course-info/policy.md) document for
 additional information.

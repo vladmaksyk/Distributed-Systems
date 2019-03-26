@@ -29,6 +29,8 @@ const (
 	valueFromClientTwo = "Another client command"
 )
 
+
+
 type paction struct {
 	promise    Promise
 	wantOutput bool
@@ -47,13 +49,7 @@ var proposerTests = []struct {
 		ZeroValue,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  0,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				Promise{To:   2,From: 1,Rnd:  0,Vrnd: NoRound,Vval: ZeroValue,},
 				false,
 				Accept{},
 			},
@@ -61,34 +57,18 @@ var proposerTests = []struct {
 	},
 	{
 		NewProposer(2, 3, &mockLD{}, nil, nil),
-		"valid quorum and no value reported -> propose (send accept) client value (free value) from proposer.clientValue field (I)",
+		"valid quorum (majority of nodes on the same round) and no value reported -> propose (send accept) client value (free value) from proposer.clientValue field (I)",
 		valueFromClientOne,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				Promise{To: 2, From: 1, Rnd: 2, Vrnd: NoRound, Vval: ZeroValue,},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 0,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				Promise{To: 2, From: 0, Rnd:  2, Vrnd: NoRound, Vval: ZeroValue,},
 				true,
-				Accept{
-					From: 2,
-					Rnd:  2,
-					Val:  valueFromClientOne,
-				},
+				Accept{From: 2,Rnd:  2,Val:  valueFromClientOne,},
 			},
 		},
 	},
@@ -98,30 +78,14 @@ var proposerTests = []struct {
 		valueFromClientTwo,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				Promise{To:   2,From: 1,Rnd:  2,Vrnd: NoRound,Vval: ZeroValue,},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 0,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				Promise{To:   2,From: 0,Rnd:  2,Vrnd: NoRound,Vval: ZeroValue,},
 				true,
-				Accept{
-					From: 2,
-					Rnd:  2,
-					Val:  valueFromClientTwo,
-				},
+				Accept{From: 2,Rnd:  2,Val:  valueFromClientTwo,},
 			},
 		},
 	},
@@ -131,30 +95,14 @@ var proposerTests = []struct {
 		ZeroValue,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To: 2, From: 1, Rnd:  2, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 0,
-					Rnd:  2,
-					Vrnd: 1,
-					Vval: "Leslie",
-				},
+				Promise{To:   2,From: 0, Rnd:  2, Vrnd: 1, Vval: "Leslie",}, //value accepted in round 1 but highest round seen is 2 so so update hieghest round seen
 				true,
-				Accept{
-					From: 2,
-					Rnd:  2,
-					Val:  "Leslie",
-				},
+				Accept{From: 2, Rnd:  2, Val:  "Leslie",},
 			},
 		},
 	},
@@ -164,13 +112,7 @@ var proposerTests = []struct {
 		ZeroValue,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  1,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2,From: 1, Rnd:  1, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
@@ -182,35 +124,17 @@ var proposerTests = []struct {
 		ZeroValue,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  1,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  1, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 0,
-					Rnd:  6,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 0, Rnd:  6, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  4,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  4, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
@@ -222,35 +146,17 @@ var proposerTests = []struct {
 		ZeroValue,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  2, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  2, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  2, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
@@ -264,63 +170,29 @@ var proposerTests = []struct {
 		valueFromClientTwo,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  2, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  2, Vrnd: NoRound,Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  2, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 0,
-					Rnd:  0,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 0, Rnd:  0, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 0,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 0, Rnd:  2, Vrnd: NoRound, Vval: "",},
 				true,
-				Accept{
-					From: 2,
-					Rnd:  2,
-					Val:  valueFromClientTwo,
-				},
+				Accept{From: 2, Rnd:  2, Val:  valueFromClientTwo,},
 			},
 		},
 	},
@@ -330,30 +202,14 @@ var proposerTests = []struct {
 		ZeroValue,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 0,
-					Rnd:  2,
-					Vrnd: 1,
-					Vval: "Lamport",
-				},
+				Promise{To:   2, From: 0, Rnd:  2, Vrnd: 1, Vval: "Lamport",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  2,
-					Vrnd: 0,
-					Vval: "Leslie",
-				},
+				Promise{To:   2, From: 1, Rnd:  2, Vrnd: 0, Vval: "Leslie",},
 				true,
-				Accept{
-					From: 2,
-					Rnd:  2,
-					Val:  "Lamport",
-				},
+				Accept{From: 2, Rnd:  2, Val:  "Lamport",},
 			},
 		},
 	},
@@ -363,24 +219,12 @@ var proposerTests = []struct {
 		ZeroValue,
 		[]paction{
 			{
-				Promise{
-					To:   2,
-					From: 0,
-					Rnd:  6,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 0, Rnd:  6, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},
 			{
-				Promise{
-					To:   2,
-					From: 1,
-					Rnd:  6,
-					Vrnd: NoRound,
-					Vval: "",
-				},
+				Promise{To:   2, From: 1, Rnd:  6, Vrnd: NoRound, Vval: "",},
 				false,
 				Accept{},
 			},

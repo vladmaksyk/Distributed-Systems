@@ -1,11 +1,11 @@
-![UiS](../img/uis-logo-en.png)
+![UiS](https://www.uis.no/getfile.php/13391907/Biblioteket/Logo%20og%20veiledninger/UiS_liggende_logo_liten.png)
 
 # Lab 4: Single-decree Paxos
 
 | Lab 4:		| Single-decree Paxos 			|
 | -------------------- 	| ------------------------------------- |
 | Subject: 		| DAT520 Distributed Systems 		|
-| Deadline:		| Friday Mar 2 2018 12:00		|
+| Deadline:		| Thursday Mar 7 2019 12:00		|
 | Expected effort:	| 30 hours 				|
 | Grading: 		| Pass/fail + Lab Exam 			|
 | Submission: 		| Group					|
@@ -15,26 +15,29 @@
 1. [Introduction](#introduction)
 2. [Resources](#resources)
 3. [Questions](#questions-10)
-4. [Algorithm Implementation](#algorithm-implementation-40)
+4. [Algorithm Implementation](#algorithm-implementation-30)
 5. [Distributed Implementation](#distributed-implementation-50)
-6. [Lab Approval](#lab-approval)
+6. [Dockerize your application](#dockerize-your-application-10)
+7. [Lab Approval](#lab-approval)
 
 ## Introduction
 
 The overall objective of this lab is to implement a single-decree version of
-Paxos. The assignment consist of three parts:
+Paxos. The assignment consist of four parts:
 
 1. A set of theory questions that you should answer (10%).
 
 2. Implementation of the core algorithm for each of the three Paxos roles, the
    Proposer, Acceptor and Learner. This implementation has corresponding unit
-   tests and will be verified by Autograder (40%).
+   tests and will be verified by Autograder (30%).
 
 3. Integration of the Paxos implementation into your application for
    distributed leader detection from Lab 3. The goal is to use the failure and
    leader detection capabilities from your previous implementation to choose a
    single proposer amongst a group a Paxos processes.  This subtask will be
    verified by a member of the teaching staff during lab hours (50%).
+   
+4. The application should be containerized with Docker. Your container(s) will be verified by a member of the teaching staff during lab hours (10%).
 
 The Paxos implementation for this lab will be a single-decree version. This
 variant of Paxos is only expected to choose a single command. It does not need
@@ -44,7 +47,7 @@ to choose multiple commands.
 ## Resources
 
 Several Paxos resources are listed below. You should use these resources to
-answer the [questions](#questions) for this lab. You are also advised to use
+answer the [questions](#questions-10) for this lab. You are also advised to use
 them as support literature when working on your implementation now and in
 future lab assignments.
 
@@ -62,7 +65,7 @@ future lab assignments.
 
 Answer the questions below. You should write down and submit your answers by
 using the
-[answers.md](https://github.com/uis-dat520-s18/glabs/blob/master/lab4/answers.md)
+[answers.md](https://dat520.github.io/r?assignments/blob/master/lab4/answers.md)
 file.
 
 1. Is it possible that Paxos enters an infinite loop? Explain.
@@ -80,7 +83,7 @@ file.
 
 5. Explain, with an example, what will happen if there are multiple
    proposers.
-
+   
 6. What happens if two proposers both believe themselves to be the leader and
    send `Prepare` messages simultaneously?
 
@@ -93,7 +96,20 @@ file.
 9. What must happen for a value to be “chosen”? What is the connection between
    chosen values and learned values?
 
-## Algorithm implementation (40%)
+## Prerequisites
+
+In order for the go imports to work you need to pull the assignments repository 
+to a new directory.
+
+```go
+# Pull the assignments into the correct location
+go get -u dat520.github.io
+
+# Run this command to get new or updated assignments
+git pull
+```
+
+## Algorithm implementation (30%)
 
 You will in this task implement the single-decree Paxos algorithm for each of
 the three Paxos roles. This task will be verified by Autograder.
@@ -148,7 +164,7 @@ something more application specific, e.g. a client request. A constant named
 
 The Paxos message definitions found in `defs.go` uses the naming conventions
 found in
-[this](https://github.com/uis-dat520-s18/glabs/blob/master/lab4/resources/paxos-insanely-simple.pdf)
+[this](https://dat520.github.io/r?assignments/blob/master/lab4/resources/paxos-insanely-simple.pdf)
 algorithm specification (slide 64 and 65):
 
 ```go
@@ -242,7 +258,7 @@ failing acceptor test case is shown below:
 ```go
 === RUN TestHandlePrepareAndAccept
 --- FAIL: TestHandlePrepareAndAccept (0.00s)
-        acceptor_test.go:17:
+        acceptor_test.go:17: 
                 HandlePrepare
                 test nr:1
                 description: no previous received prepare -> reply with correct rnd and no vrnd/vval
@@ -325,7 +341,7 @@ else
 
 * All `Deliver` methods for each of the three Paxos roles.
 
-*Update:* Proposer progress check
+*Proposer progress check:*
 
 The Proposer must also be able to handle the case where after becoming leader,
 its `crnd` variable is still lower than the previous leaders `crnd`. This may
@@ -398,6 +414,45 @@ additional logic to handle this case if you want. The proposer does also not
 implement a progress check to verify that a prepare or accept actually results
 in a quorum of promises or a value being chosen.
 
+## Dockerize your application (10%)
+In subsequent labs we will use [containers](https://www.docker.com/resources/what-container) 
+to run multiple instances of Paxos nodes. As part of this lab you are expected to complete 
+the installation of Docker and containerize your application.
+
+1. [Docker installation](https://docs.docker.com/install/)
+2. [Deploying Go servers with Docker](https://blog.golang.org/docker)
+
+```Docker
+# This is a template Dockerfile
+
+# Start from a Debian image with the latest version of Go installed
+# and a workspace (GOPATH) configured at /go.
+FROM golang
+
+# Copy the local package files to the container's workspace.
+COPY ./ /go/src/dat520.github.io
+
+# Build your application inside the container.
+RUN go install dat520.github.io/lab4/PaxosServer
+
+# Run your application when the container starts
+ENTRYPOINT /go/bin/PaxosServer
+```
+```go
+# Go to your group repository. This is neccessary to use the command below
+# to build your container.
+cd $GOPATH/src/$gpath
+
+# Build your container
+docker build -t dat520-lab4 -f lab4/PaxosServer/Dockerfile .
+
+# Run your container
+docker run -itd --name lab4_1 --rm dat520-lab4
+
+# Attach standard input, output and error streams
+docker attach lab4_1
+``` 
+
 #### Test Scenario
 
 You should for this lab, in addition to explaining your code and design,
@@ -411,7 +466,7 @@ demonstrate the following scenario:
    response.
 
 3. Send another different client command to the system. The system should reply
-   with the value _form the previous command_.
+   with the value _from the previous command_.
 
 4. Stop the leader Paxos node and let the system choose a new leader. Let the
    clients connect to the new leader and send yet another command. The system
@@ -430,16 +485,15 @@ show your solution, reach out to a member of the teaching staff. It is
 expected that you can explain your code and show how it works. You may show
 your solution on a lab workstation or your own computer.
 
-**60% of this lab must be passed for the lab to be approved.** The results from
+**At least 60% of this lab must be passed and all subtasks must be attempted for the lab to be approved.** The results from
 Autograder will be taken into consideration when approving a lab.
 
 You should for this lab present a working demo of the application described in
 the previous [section](#distributed-implementation-50). The application should
-run on three machines in the lab (not enough to run just on localhost). You
-should demonstrate that your implementation fulfills the previously listed
+run on three machines or container instances in the lab (not enough to run just on localhost). You should demonstrate that your implementation fulfills the previously listed
 specification. The task will be verified by a member of the teaching staff
 during lab hours.
 
 Also see the [Grading and Collaboration
-Policy](https://github.com/uis-dat520-s18/course-info/policy.md) document for
+Policy](https://dat520.github.io/r?course-info/blob/master/policy.md) document for
 additional information.

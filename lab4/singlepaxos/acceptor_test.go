@@ -65,23 +65,14 @@ var acceptorTests = []struct {
 	actions  []acceptorAction
 }{
 	{
-		NewAcceptor(0, nil, nil),
-		"no previous received prepare -> reply with correct rnd and no vrnd/vval",
-		[]acceptorAction{
+/*1*/	NewAcceptor(0, nil, nil),  //id , promissout, learn out
+/*2*/	"no previous received prepare -> reply with correct rnd and no vrnd/vval",
+/*3*/	[]acceptorAction{
 			{
 				msgtype: prepare,
-				prepare: Prepare{
-					From: 1,
-					Crnd: 1,
-				},
+				prepare: Prepare{From: 1,Crnd: 1,},
 				wantOutput: true,
-				wantPrm: Promise{
-					To:   1,
-					From: 0,
-					Rnd:  1,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				wantPrm: Promise{To: 1,From: 0, Rnd:  1, Vrnd: NoRound, Vval: ZeroValue,},
 			},
 		},
 	},
@@ -91,33 +82,15 @@ var acceptorTests = []struct {
 		[]acceptorAction{
 			{
 				msgtype: prepare,
-				prepare: Prepare{
-					From: 1,
-					Crnd: 1,
-				},
+				prepare: Prepare{From: 1,Crnd: 1,},
 				wantOutput: true,
-				wantPrm: Promise{
-					To:   1,
-					From: 0,
-					Rnd:  1,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				wantPrm: Promise{To:   1,From: 0,Rnd:  1,Vrnd: NoRound,Vval: ZeroValue,},
 			},
 			{
 				msgtype: prepare,
-				prepare: Prepare{
-					From: 2,
-					Crnd: 2,
-				},
+				prepare: Prepare{From: 2,Crnd: 2,},
 				wantOutput: true,
-				wantPrm: Promise{
-					To:   2,
-					From: 0,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				wantPrm: Promise{To:   2,From: 0, Rnd: 2, Vrnd: NoRound, Vval: ZeroValue,},
 			},
 		},
 	},
@@ -127,75 +100,37 @@ var acceptorTests = []struct {
 		[]acceptorAction{
 			{
 				msgtype: prepare,
-				prepare: Prepare{
-					From: 1,
-					Crnd: 1,
-				},
+				prepare: Prepare{From: 1,Crnd: 1,},
 				wantOutput: true,
-				wantPrm: Promise{
-					To:   1,
-					From: 0,
-					Rnd:  1,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				wantPrm: Promise{To:   1,From: 0,Rnd:  1,Vrnd: NoRound,Vval: ZeroValue,},
 			},
 			{
 				msgtype: accept,
-				accept: Accept{
-					From: 1,
-					Rnd:  1,
-					Val:  "Lamport",
-				},
+				accept: Accept{From: 1,Rnd:  1,Val:  "Lamport",},
 				wantOutput: true,
-				wantLrn: Learn{
-					From: 0,
-					Rnd:  1,
-					Val:  "Lamport",
-				},
+				wantLrn: Learn{From: 0,Rnd:  1,Val:  "Lamport",},
 			},
 			{
 				msgtype: prepare,
-				prepare: Prepare{
-					From: 2,
-					Crnd: 2,
-				},
+				prepare: Prepare{From: 2,Crnd: 2,},
 				wantOutput: true,
-				wantPrm: Promise{
-					To:   2,
-					From: 0,
-					Rnd:  2,
-					Vrnd: 1,
-					Vval: "Lamport",
-				},
+				wantPrm: Promise{To:   2,From: 0,Rnd:  2,Vrnd: 1,Vval: "Lamport",},
 			},
 		},
 	},
 	{
 		NewAcceptor(0, nil, nil),
-		"prepare with crnd lower than seen rnd -> ignore prepare",
+		"prepare with crnd lower than highest round seen rnd -> ignore prepare",
 		[]acceptorAction{
 			{
 				msgtype: prepare,
-				prepare: Prepare{
-					From: 1,
-					Crnd: 2,
-				},
+				prepare: Prepare{From: 1,Crnd: 2,},
 				wantOutput: true,
-				wantPrm: Promise{
-					To:   1,
-					From: 0,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				wantPrm: Promise{To:   1,From: 0,Rnd:  2,Vrnd: NoRound,Vval: ZeroValue,},
 			},
 			{
 				msgtype: prepare,
-				prepare: Prepare{
-					From: 1,
-					Crnd: 1,
-				},
+				prepare: Prepare{From: 1,Crnd: 1,},
 				wantOutput: false,
 			},
 		},
@@ -206,26 +141,13 @@ var acceptorTests = []struct {
 		[]acceptorAction{
 			{
 				msgtype: prepare,
-				prepare: Prepare{
-					From: 1,
-					Crnd: 2,
-				},
+				prepare: Prepare{From: 1,Crnd: 2,},
 				wantOutput: true,
-				wantPrm: Promise{
-					To:   1,
-					From: 0,
-					Rnd:  2,
-					Vrnd: NoRound,
-					Vval: ZeroValue,
-				},
+				wantPrm: Promise{To:   1,From: 0,Rnd:  2,Vrnd: NoRound,Vval: ZeroValue,},
 			},
 			{
 				msgtype: accept,
-				accept: Accept{
-					From: 2,
-					Rnd:  1,
-					Val:  "Lamport",
-				},
+				accept: Accept{From: 2,Rnd:  1,Val:  "Lamport",},
 				wantOutput: false,
 			},
 		},
