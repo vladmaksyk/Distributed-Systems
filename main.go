@@ -1,49 +1,24 @@
 package main
 
 import (
-	"net"
-	"sync"
-	"time"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
-	"math"
-	"math/rand"
-
-	colorable "github.com/mattn/go-colorable"
+	"time"
+	"flag"
+	"sync"
+	"net/http"
+	"time"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/montanaflynn/stats"
-
-	"dat520.github.io/lab3/detector"
-	"dat520.github.io/lab6/bank"
-	"dat520.github.io/lab6/multipaxos"
+	"github.com/uis-dat520-s18/glabs/grouplab1/detector"
+	"github.com/uis-dat520-s18/glabs/grouplab4/multipaxos"
+	"github.com/gorilla/websocket"
+	colorable "github.com/mattn/go-colorable"
+	"github.com/uis-dat520-s18/glabs/grouplab4/bank"
 
 )
-
-type Process struct {
-	ourID                 int
-	nrOfProcesses         int
-	nrOfConnectedServers  int // servers connected
-	nodeIDs               []int
-	serversIDs            []int
-	listeningConns        map[int]net.Conn
-	listeningConnsClients map[int]net.Conn
-	dialingConns          map[int]net.Conn
-	dialingConnsClients   map[int]net.Conn
-	receivedValue         chan bool                    // only for client
-	failureDetector       *detector.EvtFailureDetector // only server
-	leaderDetector        *detector.MonLeaderDetector  // only server
-	subscriber            []<-chan int                 // only server
-	server                bool
-	proposer              *multipaxos.Proposer             // only server
-	acceptor              *multipaxos.Acceptor             // only server
-	learner               *multipaxos.Learner              // only server
-	bufferedValues        map[int]*multipaxos.DecidedValue // only server
-	accountsList          map[int]*bank.Account            // only server
-	valueSentToClients    map[int]bool                     // value to store a boolean if we already sent the value to the client
-}
 
 type IncomingInitialMessage struct {
 	ProcId int
@@ -60,38 +35,55 @@ type Data struct {
 	Data      []byte
 }
 
-var listeningSockStrings = []socket{
-	socket{address: "localhost:12100", server: true},
-	socket{address: "localhost:12101", server: true},
-	socket{address: "localhost:12102", server: true},
-	socket{address: "localhost:12103", server: false},
-	socket{address: "localhost:12104", server: false},
-	socket{address: "localhost:12105", server: false},
+type DataFromClient struct {
+	From        string
+	To          string
+	Transaction string
+	Value       string
 }
 
-var wg = sync.WaitGroup{}
-var suspectChangeChan chan int
-var restoreChangeChan chan int
+type Process struct {
+	ourID                 int
+	nrOfProcesses         int
+	nrOfConnectedServers  int // servers connected
+	nodeIDs               []int
+	serversIDs            []int
+	listeningConns        map[int]net.Conn
+	listeningConnsClients map[int]net.Conn
+	dialingConns          map[int]net.Conn
+	dialingConnsClients   map[int]net.Conn
+	webSocketConns        *websocket.Conn              // connection with the web socket
+	receivedValue         chan bool                    // only for client
+	failureDetector       *detector.EvtFailureDetector // only server
+	leaderDetector        *detector.MonLeaderDetector  // only server
+	subscriber            []<-chan int                 // only server
+	server                bool
+	proposer              *multipaxos.Proposer             // only server
+	acceptor              *multipaxos.Acceptor             // only server
+	learner               *multipaxos.Learner              // only server
+	bufferedValues        map[int]*multipaxos.DecidedValue // only server
+	accountsList          map[int]*bank.Account            // only server
+	bridgeChannel         chan multipaxos.Response
+}
 
 var (
-	mainServer       int
-	clientID         string
-	automaticMode    bool
-	nrOperations     int
-	start            time.Time
-	end              time.Time
-	timeOfOperations []float64
-	lastSavedValue multipaxos.Value
-	value          multipaxos.Value
-	maxSequence   int
-	indexOfServer int
-	opValue       int
-	amountValue   int
-	accountNumber int
-	timeoutSignal *time.Ticker
-	stop          chan struct{}
+	wg = sync.WaitGroup{}
+	suspectChangeChan chan int
+	restoreChangeChan chan int
+
+	addrs = []*string{
+		flag.String("client1", "127.0.0.1:8080", "http service address"),
+		flag.String("client2", "127.0.0.1:8888", "http service address"),
+	}
+	listeningSockStrings = []socket{
+		socket{address: "localhost:12100", server: true},
+		socket{address: "localhost:12101", server: true},
+		socket{address: "localhost:12102", server: true},
+	}
 )
 
+var upgrader = websocket.Upgrader{}
+var ClientSeq = 0
 
 func load_configurations() (*Process, string) {
 	proc := Process{nrOfConnectedServers: 0}
@@ -235,7 +227,7 @@ func (proc Process) readMessages() {
 		go func(index int, conn net.Conn) {
 			for {
 				var data Data
-				err := json.NewDecoder(conn).Decode(&data)
+				err := json.NewDecoder(conn).Decode(&data) //Waits for a message from every listening connection (listeningConns).
 				if err != nil {
 					if socketIsClosed(err) {
 						proc.closeTheConnection(index, conn, false)
@@ -373,9 +365,7 @@ func (proc Process) startPaxosMethod(prepareOut chan multipaxos.Prepare,acceptOu
 				}
 			}
 		case prm := <-promiseOut:
-			// reset the boolean map of the valueSentToClients to false
-			proc.resetMapValueSentToClient()
-			proc.proposer.DeliverPromise(prm) // deliver to myself
+			proc.proposer.DeliverPromise(prm)
 			// receive a promise; deliver the promise to prm.To
 			// marshal (encode) the promise
 			marshPrm, _ := json.Marshal(prm)
@@ -405,11 +395,15 @@ func (proc Process) startPaxosMethod(prepareOut chan multipaxos.Prepare,acceptOu
 			}
 		case decidedVal := <-decidedOut:
 			// handle the decided value (all the servers, not only the leader)
-			proc.handleDecideValue(decidedVal)
+			message := proc.handleDecideValue(decidedVal)
+			// only if we are the leader, we write the message in the channel
+			if proc.ourID == proc.leaderDetector.Leader() {
+				proc.bridgeChannel <- message
+			}
 		}
 	}
 }
-func (proc Process) handleDecideValue(decidedVal multipaxos.DecidedValue) {
+func (proc Process) handleDecideValue(decidedVal multipaxos.DecidedValue) (msg multipaxos.Response) {
 	adu := proc.proposer.GetADU()
 	if decidedVal.SlotID > adu+1 {
 		proc.bufferedValues[int(adu)+1] = &decidedVal
@@ -421,24 +415,47 @@ func (proc Process) handleDecideValue(decidedVal multipaxos.DecidedValue) {
 			proc.accountsList[decidedVal.Value.AccountNum] = &bank.Account{Number: decidedVal.Value.AccountNum, Balance: 0}
 		}
 		// apply transaction from value to account
-		transactionRes := proc.accountsList[decidedVal.Value.AccountNum].Process(decidedVal.Value.Txn)
+		var transactionRes bank.TransactionResult
 
+		if decidedVal.Value.Txn.Op == 3 { // if the Operation is a "Transfer"
+			firstTransaction := bank.Transaction{
+				Op:     2, // Withdrawal the amount of money from the accont selected in the variable From
+				From:   decidedVal.Value.Txn.From,
+				To:     decidedVal.Value.Txn.To,
+				Amount: decidedVal.Value.Txn.Amount,
+			}
+			transactionRes = proc.accountsList[decidedVal.Value.AccountNum].Process(firstTransaction) // save the first transaction and show this result
+			secondTransaction := bank.Transaction{
+				Op:     1, // Deposit the money in the other account selected in the variable To
+				From:   decidedVal.Value.Txn.From,
+				To:     decidedVal.Value.Txn.To,
+				Amount: decidedVal.Value.Txn.Amount,
+			}
+
+			if proc.accountsList[decidedVal.Value.Txn.To.Number] == nil {
+				// create and store new account with a balance of zero
+				proc.accountsList[decidedVal.Value.Txn.To.Number] = &bank.Account{Number: decidedVal.Value.Txn.To.Number, Balance: 0}
+			}
+			proc.accountsList[decidedVal.Value.Txn.To.Number].Process(secondTransaction) // save the second transaction but don't show the result
+		} else {
+			// for the all other transactions just call a simple process function
+			transactionRes = proc.accountsList[decidedVal.Value.AccountNum].Process(decidedVal.Value.Txn)
+		}
+		// create response with appropriate transaction result, client id and client seq
+		response := multipaxos.Response{ClientID: decidedVal.Value.ClientID, ClientSeq: decidedVal.Value.ClientSeq, TxnRes: transactionRes}
 		if proc.ourID == proc.leaderDetector.Leader() {
-			// create response with appropriate transaction result, client id and client seq
-			response := multipaxos.Response{ClientID: decidedVal.Value.ClientID, ClientSeq: decidedVal.Value.ClientSeq, TxnRes: transactionRes}
-			marshHB, _ := json.Marshal(response)
-			msg := Data{TypeOfMsg: "response", Data: marshHB}
-			clientID, _ := strconv.Atoi(decidedVal.Value.ClientID)
-			// forward response to client handling module
-			proc.sendValueOrRedirectToCliente(clientID, msg)
+			msg = response
 		}
 	}
 	// increment adu by 1 (increment decided slot for proposer)
 	proc.proposer.IncrementAllDecidedUpTo()
 	if proc.bufferedValues[int(adu)+1] != nil {
-		proc.handleDecideValue(*proc.bufferedValues[int(adu)+1])
+		msg = proc.handleDecideValue(*proc.bufferedValues[int(adu)+1])
 	}
+
+	return msg
 }
+
 
 func (proc Process) handleServer(delta time.Duration) {
 	// add the leader Detector
@@ -455,19 +472,17 @@ func (proc Process) handleServer(delta time.Duration) {
 	proc.failureDetector = fd
 	proc.failureDetector.Start()
 
-	// ----- split here
+	// variable to read the decided value from the paxos method to the webSocket
+	proc.bridgeChannel = make(chan multipaxos.Response, 20)
 
-	wg.Add(3)
+	wg.Add(4)
 	// --- paxos implementation
-	proc.valueSentToClients = make(map[int]bool)
-	proc.resetMapValueSentToClient()
-
 	prepareOut := make(chan multipaxos.Prepare, 8)
 	acceptOut := make(chan multipaxos.Accept, 8)
 	promiseOut := make(chan multipaxos.Promise, 8)
 	learnOut := make(chan multipaxos.Learn, 8)
 	decidedOut := make(chan multipaxos.DecidedValue, 8)
-	
+
 	proc.proposer = multipaxos.NewProposer(proc.ourID, proc.nrOfConnectedServers, -1, proc.leaderDetector, prepareOut, acceptOut)
 	proc.proposer.Start()
 	proc.acceptor = multipaxos.NewAcceptor(proc.ourID, promiseOut, learnOut)
@@ -478,10 +493,9 @@ func (proc Process) handleServer(delta time.Duration) {
 	go proc.startPaxosMethod(prepareOut, acceptOut, promiseOut, learnOut, decidedOut)
 
 	// start the goroutines to read messages and decode them
-	proc.readMessages()                        // from the servers
-	proc.waitForClientValueAndDeliverPrepare() // from the clients
+	proc.readMessages() // from the servers. actual messages received in the network layer.
 
-	// create a slice of heartbeats to send to the other connected processes
+	// create a slice of initial heartbeats to send to the other connected processes
 	sliceHeartbeats := make([]detector.Heartbeat, 0)
 	for _, id := range proc.serversIDs {
 		if id != proc.ourID {
@@ -493,284 +507,157 @@ func (proc Process) handleServer(delta time.Duration) {
 
 	go proc.waitForHBSend(hbOut) // start a goroutine to wait for heartbeats response (reply)
 	go proc.updateSubscribe()    // wait to update the subscriber
+
+	http.HandleFunc("/", proc.serveHome)
+	proc.webSocket() // start the web socket; the leader is listening
+
 	wg.Wait()
 }
+func (proc Process) webSocket() {
+	// only the leader communicate with the client(s)
+	if proc.ourID == proc.leaderDetector.GetLeader() {
+		http.HandleFunc("/ws"+strconv.Itoa(proc.ourID), proc.serveWs)
+
+		for addrInd := 0; addrInd < len(addrs); addrInd++ {
+			go func(addrInd int) {
+				log.Fatal(http.ListenAndServe(*addrs[addrInd], nil)) // the leader listen to all the address saved in the addrs variable
+			}(addrInd)
+		}
+	}
+}
+
+// function that handle the communication between server and client
+func (proc Process) serveWs(w http.ResponseWriter, r *http.Request) {
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("upgrade:", err)
+		return
+	}
+	proc.webSocketConns = ws
+
+	for {
+		var data DataFromClient
+
+		err := ws.ReadJSON(&data) // read JSON data
+		if err != nil {
+			fmt.Println(data)
+			fmt.Println(err)
+			break
+		}
+
+		var mainErr error
+		go func() {
+			msg = proc.handleMessage(data)
+			mainErr = ws.WriteJSON(msg) // send the JSON data
+		}()
+
+		if mainErr != nil {
+			fmt.Println(mainErr)
+			break
+		}
+	}
+}
+
+// function that load the html file of the client
+func (proc Process) serveHome(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	http.ServeFile(w, r, "home.html")
+}
+
+// MAIN FUNCTION FOR DELIVER THE MESSAGE FROM THE CLIENT TO PAXOS
+func (proc Process) handleMessage(data DataFromClient) (response multipaxos.Response) {
+
+	var (
+		message multipaxos.Value
+		txn     bank.Transaction
+	)
+
+	switch data.Transaction {
+	case "Balance":
+		txn.Op = 0
+	case "Deposit":
+		txn.Op = 1
+	case "Withdrawal":
+		txn.Op = 2
+	case "Transfer":
+		txn.Op = 3
+		accountNumTo, _ := strconv.Atoi(data.To)
+
+		if proc.accountsList[accountNumTo] == nil {
+			// if there isn't an account to transfer the money, initialize it
+			proc.accountsList[accountNumTo] = &bank.Account{Number: accountNumTo, Balance: 0}
+		}
+		txn.To = *proc.accountsList[accountNumTo]
+	}
+
+	txn.Amount, _ = strconv.Atoi(data.Value)
+	message.AccountNum, _ = strconv.Atoi(data.From)
+
+	if proc.accountsList[message.AccountNum] == nil {
+		proc.accountsList[message.AccountNum] = &bank.Account{Number: message.AccountNum, Balance: 0}
+	}
+	txn.From = *proc.accountsList[message.AccountNum]
+
+	message.Txn = txn
+	message.ClientID = data.From
+	message.ClientSeq = ClientSeq
+
+	log.WithFields(log.Fields{"msg": message}).Info("RECEIVING VALUE FROM CLIENT:")
+	if proc.ourID == proc.leaderDetector.GetLeader() {
+		proc.proposer.DeliverClientValue(message)
+	}
+
+	for {
+		select {
+		case msg := <-proc.bridgeChannel: // wait for the result from Paxos and then increase the sequence
+			ClientSeq += 1
+			return msg
+		}
+	}
+
+}
+
+// start the webSocket and handle the listening part for the clients
+
+
+
+
 
 func main() {
-	delta := time.Second * 2
+	delta := time.Second * 3
 	// Only log the warning severity or above.
 	log.SetLevel(log.DebugLevel) // JUST FOR TEST
 	log.SetOutput(colorable.NewColorableStdout())
 
-	proc, address := load_configurations()
+	proc, _ := load_configurations()
 	wg.Wait()
 	log.Info("CONNECTIONS ESTABLISHED")
-
 
 	if proc.server {
 		proc.bufferedValues = make(map[int]*multipaxos.DecidedValue)
 		proc.accountsList = make(map[int]*bank.Account)
 		proc.handleServer(delta)
-	} else {
-		proc.handleClient(address)
 	}
+
 	wg.Wait()
 }
 
-
-func (proc Process) waitForClientValueAndDeliverPrepare() {
-	for index, conn := range proc.listeningConnsClients {
-		wg.Add(1)
-		go func(index int, conn net.Conn) {
-			for {
-				var message multipaxos.Value
-				err := json.NewDecoder(conn).Decode(&message)
-				if err != nil {
-					if socketIsClosed(err) {
-						proc.closeTheConnection(index, conn, true)
-						break
-					}
-				}
-
-				log.WithFields(log.Fields{"id": index, "msg": message}).Info("RECEIVING VALUE FROM CLIENT:")
-
-				// if the process is the leader, start the multipaxos method
-				if proc.ourID == proc.leaderDetector.GetLeader() {
-					proc.proposer.DeliverClientValue(message)
-				} else {
-					// return a redirect to the client
-					leaderIndex := proc.leaderDetector.GetLeader()
-					marshHB, _ := json.Marshal(leaderIndex)
-					msg := Data{TypeOfMsg: "redirect", Data: marshHB}
-					// forward response to client handling module
-					proc.sendValueOrRedirectToCliente(index, msg)
-				}
-			}
-			wg.Done()
-		}(index, conn)
-	}}   // to delete
-
-func (proc Process) sendValueOrRedirectToCliente(clientID int, msg Data) {
-	if conn, ok := proc.dialingConnsClients[clientID]; ok {
-		err := json.NewEncoder(conn).Encode(msg)
-		if err != nil {
-			if socketIsClosed(err) {
-				proc.closeTheConnection(clientID, conn, false)
-				return
-			}
-		}
-		log.WithFields(log.Fields{"id": clientID, "msg": msg.TypeOfMsg}).Info("SEND VALUE TO CLIENT: ")
-	}
-}  // to delete
-
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// MAIN FUNCTION FOR THE SERVER
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-///////////////////////////////////////CLIENT/////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// MAIN PART OF THE CLIENT
-func (proc Process) handleClient(cID string) {
-	mainServer = -1 // server to connect (leader)
-	nrOperations = 0
-	maxSequence = 0
-	clientID = strconv.Itoa(proc.ourID)
-	proc.receivedValue = make(chan bool, 8)
-	stop = make(chan struct{})
-	timeOfOperations = make([]float64, 0)
-
-	// choose between manual and automatic mode
-	stringMode := terminal_input("Manual mode (m) or Automatic mode (a)? ")
-	timeoutSignal = time.NewTicker(time.Second * 10)
-	StartSelect(proc) // start the select for loop
-
-	if stringMode == "m" {
-		automaticMode = false
-	} else if stringMode == "a" {
-		automaticMode = true
-	}
-
-	proc.DeliverResponse() // a trick to start sending value to the servers
-	waitForLearn(proc)     // wait to receive messages
-
-}
-func sendValue(proc Process) {
-	if automaticMode == false {
-		opValue = get_int_from_terminal("Insert an operation (0: Balance, 1: Deposit, 2: Withdrawal): ")
-		accountNumber = get_int_from_terminal("Insert an account number: ")
-		amountValue = 0
-		if opValue > 0 {
-			amountValue = get_int_from_terminal("Insert an amount: ")
-		}
-	} else {
-		opValue = rand.Intn(2)
-		accountNumber = rand.Intn(1000)
-		amountValue = 0
-		if opValue > 0 {
-			amountValue = rand.Intn(10000)
-		}
-	}
-
-	transaction := bank.Transaction{Op: bank.Operation(opValue), Amount: amountValue}
-	value = multipaxos.Value{ClientID: clientID, ClientSeq: maxSequence, AccountNum: accountNumber, Txn: transaction}
-
-	if mainServer == -1 { // try to connect to a random server (if we didn't receive any redirect)
-		indexOfServer = rand.Intn(len(proc.dialingConns) - 1)
-	} else { // or to the server indicated by the redirect
-		indexOfServer = mainServer
-	}
-	if conn, ok := proc.dialingConns[indexOfServer]; ok {
-		err := json.NewEncoder(conn).Encode(value)
-		if err != nil {
-			if socketIsClosed(err) {
-				proc.closeTheConnection(indexOfServer, conn, false)
-				return
-			}
-		}
-		maxSequence++
-
-		lastSavedValue = value
-		log.WithFields(log.Fields{"id": indexOfServer, "msg": value}).Info("--> SEND VALUE TO SERVER: ")
-	}
-}
-func StartSelect(proc Process) {   // New
-	go func() {
-		for {
-			select {
-			case response := <-proc.receivedValue:
-				start = time.Now()
-				if response {
-					nrOperations++
-					if nrOperations < 500 {
-						sendValue(proc)
-					}
-				} else {
-					// we received a redirect
-					if conn, ok := proc.dialingConns[mainServer]; ok {
-						err := json.NewEncoder(conn).Encode(lastSavedValue)
-						if err != nil {
-							if socketIsClosed(err) {
-								proc.closeTheConnection(mainServer, conn, false)
-								return
-							}
-						}
-						log.WithFields(log.Fields{"id": mainServer, "msg": lastSavedValue}).Info("--> SEND VALUE TO SERVER: ")
-					}
-				}
-			case <-timeoutSignal.C:
-				log.Error("TIMEOUT triggered...")
-				mainServer = -1 // reset the leader
-				if nrOperations < 500 {
-					sendValue(proc)
-					timeoutSignal = time.NewTicker(time.Second * 10)
-				} else {
-					Stop()
-				}
-			case <-stop:
-				// create the statistics
-				mean, _ := stats.Mean(timeOfOperations)
-				log.WithFields(log.Fields{"mean": mean}).Info("Mean in seconds:")
-				minimum, _ := stats.Min(timeOfOperations)
-				log.WithFields(log.Fields{"min": minimum}).Info("Minimum in seconds:")
-				maximum, _ := stats.Max(timeOfOperations)
-				log.WithFields(log.Fields{"max": maximum}).Info("Maximum in seconds:")
-				median, _ := stats.Median(timeOfOperations)
-				log.WithFields(log.Fields{"median": median}).Info("Median in seconds:")
-				variance, _ := stats.Variance(timeOfOperations)
-				stddev := math.Sqrt(variance)
-				log.WithFields(log.Fields{"std": stddev}).Info("Standard deviation in seconds:")
-				percentile, _ := stats.Percentile(timeOfOperations, 99)
-				log.WithFields(log.Fields{"99perc": percentile}).Info("99 Percentile in seconds:")
-				return
-			}
-		}
-	}()
-}
-func waitForLearn(proc Process) {
-	for index, conn := range proc.listeningConns {
-		wg.Add(1)
-		go func(index int, conn net.Conn) {
-			for {
-				var data Data
-				err := json.NewDecoder(conn).Decode(&data)
-				if err != nil {
-					if socketIsClosed(err) {
-						proc.closeTheConnection(index, conn, false)
-						break
-					}
-				}
-
-				if data.TypeOfMsg != "" {
-					switch data.TypeOfMsg {
-					case "response":
-						var response multipaxos.Response
-						// unmarshal (decode) the response
-						err := json.Unmarshal(data.Data, &response)
-						if err != nil {
-							log.WithFields(log.Fields{"type": data.TypeOfMsg, "err": err}).Error("error")
-						}
-						log.WithFields(log.Fields{"id": index, "msg": response}).Info("<-- RECEIVING RESPONSE FROM SERVER : ")
-						log.WithField("nr:", nrOperations).Warn("Number of operations:")
-						if nrOperations < 500 {
-							end = time.Now()
-							timeOfOperations = append(timeOfOperations, end.Sub(start).Seconds())
-							time.Sleep(time.Millisecond * 50)
-							proc.DeliverResponse()
-						} else {
-							Stop()
-						}
-					case "redirect":
-						var leader int
-						// unmarshal (decode) the leader
-						err := json.Unmarshal(data.Data, &leader)
-						if err != nil {
-							log.WithFields(log.Fields{"type": data.TypeOfMsg, "err": err}).Error("error")
-						}
-						log.WithFields(log.Fields{"id": index, "to": leader}).Info("<-- RECEIVING REDIRECT FROM SERVER : ")
-
-						mainServer = leader
-						proc.DeliverRedirect()
-					}
-				}
-			}
-			wg.Done()
-		}(index, conn)
-	}
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-func Stop() {
-	stop <- struct{}{} // stop the automatic send
-}
-func (proc Process) DeliverResponse() {
-	proc.receivedValue <- true
-}
-func (proc Process) DeliverRedirect() {
-	proc.receivedValue <- false
-}
-func (proc Process) resetMapValueSentToClient() {
-	for i := range proc.dialingConnsClients {
-		proc.valueSentToClients[i] = false
-	}
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// socketIsClosed is a helper method to check if a listening socket has been closed.
 func socketIsClosed(err error) bool {
 	if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "forcibly closed by the remote host") {
 		return true
 	}
 	return false
 }
+// Close the connection with a process if there is an error
 func (proc Process) closeTheConnection(index int, conn net.Conn, client bool) {
 	conn.Close()
 	var typo string
@@ -785,6 +672,8 @@ func (proc Process) closeTheConnection(index int, conn net.Conn, client bool) {
 	}
 
 	log.Error("********** Connection closed with ", typo, " ", index)
+	time.Sleep(6 * time.Second) // wait for the subscriber to update the new leader
+	proc.webSocket()            // start again the webSocket from a different server
 }
 func terminal_input(message string) string {
 	var input string
