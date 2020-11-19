@@ -1,0 +1,58 @@
+
+
+Max@DESKTOP-0A1DC1R MINGW64 ~/USERPROFILE/src/dat520.github.io (master)
+$ docker build -t dat520-lab4 -f lab4/PaxosServer/Dockerfile .
+
+$ docker run -it dat520-lab4 /bin/bash
+
+$ docker container list -a
+$ docker image list
+
+$ docker image rm dat520-lab4
+$ docker container prune
+
+
+Max@DESKTOP-0A1DC1R MINGW64 ~/USERPROFILE/src/dat520.github.io (master)
+$ docker network create --subnet=172.18.0.0/16 paxosnet
+add0750e03043c74d3ff6b3a08e829f62d747d690d2c760865ff7849723ebabb
+
+                                                                                                                                                                                                                              
+Max@DESKTOP-0A1DC1R MINGW64 ~/USERPROFILE/src/dat520.github.io (master)
+$ docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+891ea911b64d        bridge              bridge              local
+a749ebebe292        host                host                local
+2252a9b07aa4        none                null                local
+add0750e0304        paxosnet            bridge              local
+
+Max@DESKTOP-0A1DC1R MINGW64 ~/USERPROFILE/src/dat520.github.io (master)
+$ docker network inspect paxosnet
+[
+    {
+        "Name": "paxosnet",
+        "Id": "add0750e03043c74d3ff6b3a08e829f62d747d690d2c760865ff7849723ebabb",
+        "Created": "2019-03-07T10:30:52.12728034Z",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": {},
+            "Config": [
+                {
+                    "Subnet": "172.18.0.0/16"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {},
+        "Options": {},
+        "Labels": {}
+    }
+]
