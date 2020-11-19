@@ -98,10 +98,11 @@ func (a *Acceptor) handlePrepare(prp Prepare) (prm Promise, output bool) {
 		prm = Promise{To: prp.From, From: a.ProcessId, Rnd: a.HighestRoundSeen, Slots: []PromiseSlot{}}
 
 		var slotsList []int
-		for k := range a.slot_vrnd {// sort in increasing order
+		for k := range a.slot_vrnd {
 			slotsList = append(slotsList, int(k))
 		}
-		sort.Ints(slotsList)
+		sort.Ints(slotsList) // sort in increasing order
+
 		for _, SlotId := range slotsList{  // sort the Slots in increasing order
 			if SlotId >= int(prp.Slot) {
 				prm.Slots = append(prm.Slots, PromiseSlot{ID : SlotID(SlotId) , Vrnd: a.slot_vrnd[SlotID(SlotId)], Vval: a.slot_vval[SlotID(SlotId)] } )
@@ -129,6 +130,7 @@ func (a *Acceptor) handleAccept(acc Accept) (lrn Learn, output bool) {
 	if a.slot_vval == nil { // if it's empty, initialize the map of vval slots
 		a.slot_vval = make(map[SlotID]Value)
 	}
+
 
 	if acc.Rnd >= a.HighestRoundSeen && acc.Rnd != a.slot_vrnd[acc.Slot]{
 

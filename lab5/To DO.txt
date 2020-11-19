@@ -1,0 +1,8 @@
+1. You will also need to extend your main application to store a set of replicated bank
+	accounts and apply transactions to them as they are decided by your Paxos nodes. 
+ 
+2. The Learner returns both a value and a corresponding slot id from its handleLearn method. 
+	It needs to construct a DecidedValue (see defs.go) using the value and slot id before sending 
+	it on its decidedOut channel
+	
+3.

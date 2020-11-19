@@ -206,7 +206,7 @@ func (p *Proposer) handlePromise(prm Promise) (accs []Accept, output bool) {
 		p.Accepts = make(map[SlotID]Accept)
 	}
 
-	if prm.Rnd == p.crnd {
+	if prm.Rnd == p.crnd { //if valid quorum but no value reported
 		if prm.From != p.PreviousSender{  // count only unique senders of promiss messages
 			p.PromiseMesegesRecieved++
 		}; p.PreviousSender = prm.From

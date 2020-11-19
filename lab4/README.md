@@ -446,11 +446,8 @@ cd $GOPATH/src/$gpath
 # Build your container
 docker build -t dat520-lab4 -f lab4/PaxosServer/Dockerfile .
 
-# Create network
-docker network create --subnet=192.168.0.0/16 dat520
-
 # Run your container
-docker run -itd --name lab4_1 --net dat520 --ip 192.168.1.1 --rm dat520-lab4
+docker run -itd --name lab4_1 --rm dat520-lab4
 
 # Attach standard input, output and error streams
 docker attach lab4_1

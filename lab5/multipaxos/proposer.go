@@ -74,7 +74,7 @@ type Proposer struct {
 func NewProposer(id, nrOfNodes, adu int, ld detector.LeaderDetector, prepareOut chan<- Prepare, acceptOut chan<- Accept) *Proposer {
 	return &Proposer{
 		id:     id,
-		quorum: (nrOfNodes / 2)+1,
+		quorum: (nrOfNodes / 2) + 1,
 		n:      nrOfNodes,
 		NumOfProcesses: nrOfNodes,
 		PreviousSender : -1,
@@ -82,7 +82,7 @@ func NewProposer(id, nrOfNodes, adu int, ld detector.LeaderDetector, prepareOut 
 		MaxValRndReported : Round(-1),
 		HighestVrnd : Round(-1),
 		MaxSlotID : SlotID(0),
-		MinSlotID : SlotID(10000),
+		MinSlotID : SlotID(1000),
 
 		crnd:     Round(id),
 		adu:      SlotID(adu),
@@ -100,8 +100,8 @@ func NewProposer(id, nrOfNodes, adu int, ld detector.LeaderDetector, prepareOut 
 
 		prepareOut: prepareOut,
 		acceptOut:  acceptOut,
-		promiseIn:  make(chan Promise, 10),
-		cvalIn:     make(chan Value, 10),
+		promiseIn:  make(chan Promise, 8),
+		cvalIn:     make(chan Value, 8),
 
 		incDcd: make(chan struct{}),
 		stop:   make(chan struct{}),
@@ -123,7 +123,6 @@ func (p *Proposer) Start() {
 					continue
 				}
 				p.nextSlot = p.adu + 1
-				fmt.Println("Proposer: Assigned to p.nextSlot p.adu + 1 ->" ,p.nextSlot )
 				p.acceptsOut.Init()
 				p.phaseOneDone = true
 				for _, acc := range accepts {
@@ -132,6 +131,7 @@ func (p *Proposer) Start() {
 				p.sendAccept()
 
 			case cval := <-p.cvalIn:
+				fmt.Println("Proposer: Got the client value")
 				if p.id != p.leader {
 					continue
 				}
@@ -142,9 +142,7 @@ func (p *Proposer) Start() {
 				p.sendAccept()
 
 			case <-p.incDcd:
-
 				p.adu++
-				fmt.Println("Proposer: Incremented p.adu ->" ,p.adu ); fmt.Println("")
 				if p.id != p.leader {
 					continue
 				}
@@ -272,8 +270,9 @@ func (p *Proposer) startPhaseOne() {
 // if the previous slot has not been decided yet.
 func (p *Proposer) sendAccept() {
 	const alpha = 1
-	if !(p.nextSlot <= p.adu+alpha) {
-		fmt.Println("Next slot", p.nextSlot, "is bigger than p.adu + 1", p.adu + alpha )
+	if !( p.nextSlot <= p.adu + alpha) {
+		fmt.Println("Proposer: Inside1")
+
 		// We must wait for the next slot to be decided before we can
 		// send an accept.
 		//
@@ -291,7 +290,6 @@ func (p *Proposer) sendAccept() {
 		p.acceptsOut.Remove(p.acceptsOut.Front())
 		p.acceptOut <- acc
 		p.nextSlot++
-		fmt.Println("Proposer: Incremented p.nextSlot2 ->" ,p.nextSlot )
 		return
 	}
 
@@ -307,11 +305,12 @@ func (p *Proposer) sendAccept() {
 			Val:  cval,
 		}
 		p.nextSlot++
-		fmt.Println("Proposer: Incremented p.nextSlot3 ->" ,p.nextSlot )
 		p.acceptOut <- acc
 	}
 }
 
 func (p *Proposer) GetADU() SlotID {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.adu
 }

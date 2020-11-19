@@ -4,6 +4,7 @@ package lab1
 
 import (
 	"io"
+	//"fmt"
 )
 
 /*

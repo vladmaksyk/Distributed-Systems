@@ -21,11 +21,8 @@ import(
 
 )
 
-
-var Address = []string{"localhost:1200","localhost:1201", "localhost:1202","localhost:1203","localhost:1204","localhost:1205"}
-//var Address = []string{"192.168.1.1/16", "192.168.1.2/16", "192.168.1.3/16","192.168.1.4/16","192.168.1.5/16"}
-//var Address = []string{"pitter22:12100", "pitter23:12101", "pitter24:12102"} //, "localhost:12103", "localhost:12104", "localhost:12105"}
-
+var Address = []string{"localhost:1200", "localhost:1201", "localhost:1202","localhost:1203","localhost:1204","localhost:1205"}
+//var Address = []string{"172.18.0.0/1", "172.18.0.1/1", "172.18.0.2/1","172.18.0.3/1","172.18.0.4/1"}
 
 var wg = sync.WaitGroup{}
 
@@ -54,7 +51,6 @@ type Process struct {
 	Server bool
 	NumOfServers int
 	AllServerIDs []int
-	ReceivedValue chan bool
 
 
 	Client bool
@@ -69,7 +65,6 @@ type Process struct {
 	Leader                      int
 	Subscriber             <-chan int
 	BreakOut						chan bool
-	PermissionForNextVal    chan int
 
 	proposer              *multipaxos.Proposer
 	acceptor              *multipaxos.Acceptor
@@ -88,20 +83,16 @@ type Process struct {
 	Value          multipaxos.Value
 
 	Start            time.Time
-	StartTT				time.Time
-	EndTT             time.Time
 	End              time.Time
-
-	Stop          chan bool
 	TimeOfOperations []float64
-	NumOfOperations  int
+
+
 }
 
 var (
 	OperationValue int
 	AmountValue   int
 	AccountNumber int
-	AutomaticMode bool
 )
 
 func NewProcess() *Process {
@@ -112,14 +103,12 @@ func NewProcess() *Process {
 	P.MainServer = -1
 	P.CatchTimeOut = false
 	P.MaxSequence = 0
-	P.NumOfOperations = 0
 
 	P.AllProcessIDs = []int{0,1,2,3,4,5}
 	P.AllServerIDs = []int{0,1,2}
 	P.AllClientIDs = []int{3,4,5}
 
-	P.Subscriber = make(<-chan int, 10)
-	P.PermissionForNextVal = make(chan int)
+	P.Subscriber = make(<-chan int, 1)
 	P.ListenConnections = make(map[int]net.Conn)
 	P.DialConnections = make(map[int]net.Conn)
 	P.BreakOut = make(chan bool)
@@ -153,10 +142,11 @@ func NewProcess() *Process {
 	}
 	return P
 }
+
 func (P *Process) ListenForConnections() {
 	wg.Add(1)
 		go func() {
-			listener, err := net.Listen("tcp", Address[P.ProcessID])   //(1200,1201,1202,1203,1204,1205)
+			listener, err := net.Listen("tcp", Address[P.ProcessID])   //(1200,1201,1202,1203,1204)
 			CheckError(err)
 			for i := 0; i < P.NumOfProcesses; i++ {
 				if P.Client && i >= P.NumOfServers{ // makes sure the clients anly have connections with the servers
@@ -198,49 +188,34 @@ func (P *Process) DialForConnections() {
 		}
 	}
 }
+
 func (P *Process) SendMessageToAllServers(M Msg) {
 	for _, key := range P.AllServerIDs{
-		if conn, ok := P.DialConnections[key]; ok {
-			err := gob.NewEncoder(conn).Encode(&M)
+			err := gob.NewEncoder(P.DialConnections[key]).Encode(&M)
 			if err != nil {
 				fmt.Println(err.Error())
 			}
-		}
 	}
 }
 func (P *Process) SendMessageToAllClients(M Msg) {
 	for _, key := range P.AllClientIDs{
-		if conn, ok := P.DialConnections[key]; ok {
-			err := gob.NewEncoder(conn).Encode(&M)
+			err := gob.NewEncoder(P.DialConnections[key]).Encode(&M)
 			if err != nil {
 				fmt.Println(err.Error())
 			}
-		}
 	}
 }
 func (P *Process) SendMessageToId(M Msg, id int) {      // sends a messege to a connection specified by the id
 	for _, key := range P.AllProcessIDs{
 		if id == key {
-			if conn, ok := P.DialConnections[key]; ok {
-				err1 := gob.NewEncoder(conn).Encode(&M)
-				if err1 != nil {
-					fmt.Println(err1.Error())
-				}
+			err1 := gob.NewEncoder(P.DialConnections[key]).Encode(&M)
+			if err1 != nil {
+				fmt.Println(err1.Error())
 			}
 		}
 	}
 }
-func (P *Process) UpdateSubscribe() {  //wait for some write in the subscriber channel in order to print out the new leader
-	for {
-		time.Sleep(time.Millisecond * 500)
-		select {
-		case gotLeader := <-P.Subscriber:
-			P.Leader = gotLeader
-			// Got publication, change the leader
-			fmt.Println("------ NEW LEADER: ", P.Leader, "------")
-		}
-	}
-}
+
 func (P *Process) SendHeartbeats(){ // create a slice of heartbeats to send to the other connected processes
 	for {
 		for _, key := range P.AllServerIDs{ //creating heartbeat for each connection
@@ -256,65 +231,24 @@ func (P *Process) SendHeartbeats(){ // create a slice of heartbeats to send to t
 			message.Pid = P.ProcessID
 
 			P.SendMessageToId(message, key)
-			time.Sleep(time.Millisecond * 200)
+			time.Sleep(time.Millisecond * 300)
 		}
-		time.Sleep(time.Millisecond * 2000)
+		time.Sleep(time.Millisecond * 1000)
 	}
 }
-
-func (P *Process) ReceiveClientValues() {
-	for _, key := range P.AllClientIDs{
-		wg.Add(1)
-		go func(key int) {
-			for {
-				newMsg := Msg{}
-				err := gob.NewDecoder(P.ListenConnections[key]).Decode(&newMsg)
-				if err != nil {
-					if SocketIsClosed(err) {
-						P.CloseTheConnection(key, P.ListenConnections[key])
-						break
-					}
-				}
-
-/*CV*/		if newMsg.MsgType == "ClientValue" {    //Handle the incoming client value
-					var value multipaxos.Value
-					buff := bytes.NewBuffer(newMsg.Msg)
-					err = gob.NewDecoder(buff).Decode(&value)
-					CheckError(err)
-
-					RecieveColor := color.New(color.Bold, color.FgBlue).PrintlnFunc()
-					RecieveColor("Recieved value:", value, " from process :", newMsg.Pid )
-
-					if P.Leader == -1 {  //if there is no leader chosen yet
-						continue
-					}
-					if P.ProcessID == P.Leader{
-						P.proposer.DeliverClientValue(value)
-
-						//<-P.PermissionForNextVal
-					}else{
-						MsgReply := Msg{}
-						var network bytes.Buffer
-						err := gob.NewEncoder(&network).Encode(value)
-						if err != nil {
-							fmt.Println(err.Error())
-						}
-						MsgReply.MsgType = "Redirect"
-						MsgReply.Msg = network.Bytes()
-						MsgReply.Pid = P.ProcessID
-						MsgReply.RedirectTo = P.Leader
-
-						P.SendMessageToId(MsgReply, newMsg.Pid)
-					}
-				}
+func (P *Process) UpdateSubscribe() {  //wait for some write in the subscriber channel in order to print out the new leader
+	for {
+			time.Sleep(time.Millisecond * 500)
+			select {
+			case gotLeader := <-P.Subscriber:
+				P.Leader = gotLeader
+				// Got publication, change the leader
+				fmt.Println("------ NEW LEADER: ", P.Leader, "------")
 			}
-			wg.Done()
-		}(key)
 	}
 }
-
 func (P *Process) ReceiveMessagesSendReply(hbResponse chan detector.Heartbeat) {
-	for _, key := range P.AllServerIDs{
+	for _, key := range P.AllProcessIDs{
 		wg.Add(1)
 		go func(key int) {
 			for {
@@ -336,7 +270,7 @@ func (P *Process) ReceiveMessagesSendReply(hbResponse chan detector.Heartbeat) {
 					if heartbeat.Request == true {
 				     	select {
 						case hbResp := <-hbResponse:
-							MsgReply:= Msg{}
+							MsgReply:=Msg{}
 							var network bytes.Buffer
 							err := gob.NewEncoder(&network).Encode(hbResp)
 							if err != nil {
@@ -357,15 +291,14 @@ func (P *Process) ReceiveMessagesSendReply(hbResponse chan detector.Heartbeat) {
 					buff := bytes.NewBuffer(newMsg.Msg)
 					err = gob.NewDecoder(buff).Decode(&value)
 					CheckError(err)
-
-					RecieveColor := color.New(color.Bold, color.FgBlue).PrintlnFunc()
-					RecieveColor("Recieved value:", value, " from process :", newMsg.Pid )
+					fmt.Println("Recieved value:", value, " from process :", newMsg.Pid ); fmt.Println("")
 
 					if P.Leader == -1 {  //if there is no leader chosen yet
 						continue
 					}
 					if P.ProcessID == P.Leader{
 						P.proposer.DeliverClientValue(value)
+						fmt.Println("Sent value to proposer" ); fmt.Println("")
 					}else{
 						MsgReply := Msg{}
 						var network bytes.Buffer
@@ -381,6 +314,7 @@ func (P *Process) ReceiveMessagesSendReply(hbResponse chan detector.Heartbeat) {
 						P.SendMessageToId(MsgReply, newMsg.Pid)
 
 					}
+
 				}
 
 /*PRP*/		if newMsg.MsgType == "Prepare" {
@@ -388,6 +322,7 @@ func (P *Process) ReceiveMessagesSendReply(hbResponse chan detector.Heartbeat) {
 					buff := bytes.NewBuffer(newMsg.Msg)
 					err = gob.NewDecoder(buff).Decode(&prepare)
 					CheckError(err)
+					fmt.Println("Got the prepare message:", prepare, " from process :", newMsg.Pid ); fmt.Println("")
 					P.acceptor.DeliverPrepare(prepare)
 				}
 
@@ -397,6 +332,7 @@ func (P *Process) ReceiveMessagesSendReply(hbResponse chan detector.Heartbeat) {
 					buff := bytes.NewBuffer(newMsg.Msg)
 					err = gob.NewDecoder(buff).Decode(&promise)
 					CheckError(err)
+					fmt.Println("Got the promise message:", promise, " from process :", newMsg.Pid ); fmt.Println("")
 					P.proposer.DeliverPromise(promise)
 			 	}
 
@@ -405,6 +341,7 @@ func (P *Process) ReceiveMessagesSendReply(hbResponse chan detector.Heartbeat) {
 					buff := bytes.NewBuffer(newMsg.Msg)
 					err = gob.NewDecoder(buff).Decode(&accept)
 					CheckError(err)
+					fmt.Println("Got the accept message:", accept, " from process :", newMsg.Pid ); fmt.Println("")
 					P.acceptor.DeliverAccept(accept)
 			 	}
 
@@ -413,64 +350,84 @@ func (P *Process) ReceiveMessagesSendReply(hbResponse chan detector.Heartbeat) {
 					buff := bytes.NewBuffer(newMsg.Msg)
 					err = gob.NewDecoder(buff).Decode(&learn)
 					CheckError(err)
+					fmt.Println("Got the learn message:", learn, " from process :", newMsg.Pid )
 					P.learner.DeliverLearn(learn)
 			 	}
 			}
 			wg.Done()
 		}(key)
+
 	}
 }
 
 func (P *Process) PaxosMethod(prepareOut chan multipaxos.Prepare,acceptOut chan multipaxos.Accept, promiseOut chan multipaxos.Promise,learnOut chan multipaxos.Learn, decidedOut chan multipaxos.DecidedValue) {
 	for {
 		select{
+
 			case prp := <-prepareOut:
+				MsgReply := Msg{}
 				var network bytes.Buffer
 				err := gob.NewEncoder(&network).Encode(prp)
-				CheckError(err)
-				MsgReply := Msg{ MsgType : "Prepare", Msg : network.Bytes(), Pid : P.ProcessID}
+				if err != nil {
+					fmt.Println(err.Error())
+				}
+				MsgReply.MsgType = "Prepare"
+				MsgReply.Msg = network.Bytes()
+				MsgReply.Pid = P.ProcessID
 				P.SendMessageToAllServers(MsgReply) //broadcast the prepare message
 
 			case prm := <-promiseOut:
+				MsgReply := Msg{}
 				var network bytes.Buffer
 				err := gob.NewEncoder(&network).Encode(prm)
-				CheckError(err)
-				MsgReply := Msg{MsgType : "Promise", Msg : network.Bytes(), Pid : P.ProcessID }
+				if err != nil {
+					fmt.Println(err.Error())
+				}
+				MsgReply.MsgType = "Promise"
+				MsgReply.Msg = network.Bytes()
+				MsgReply.Pid = P.ProcessID
 				P.SendMessageToId(MsgReply, prm.To) //Send the promise only to the sender of propose m
+				time.Sleep(300 * time.Millisecond)
 
 			case acc := <-acceptOut:
-
+				MsgReply := Msg{}
 				var network bytes.Buffer
 				err := gob.NewEncoder(&network).Encode(acc)
-				CheckError(err)
-				MsgReply := Msg{MsgType : "Accept", Msg : network.Bytes(), Pid : P.ProcessID }
+				if err != nil {
+					fmt.Println(err.Error())
+				}
+				MsgReply.MsgType = "Accept"
+				MsgReply.Msg = network.Bytes()
+				MsgReply.Pid = P.ProcessID
 				P.SendMessageToAllServers(MsgReply)             //Send the accept message to everyone
+				fmt.Println("Sent the accept message to all"); fmt.Println("")
 
 			case lrn := <-learnOut:
+				MsgReply := Msg{}
 				var network bytes.Buffer
 				err := gob.NewEncoder(&network).Encode(lrn)
-				CheckError(err)
-				MsgReply := Msg{MsgType : "Learn", Msg : network.Bytes(), Pid : P.ProcessID}
+				if err != nil {
+					fmt.Println(err.Error())
+				}
+				MsgReply.MsgType = "Learn"
+				MsgReply.Msg = network.Bytes()
+				MsgReply.Pid = P.ProcessID
 				P.SendMessageToAllServers(MsgReply) //broadcast the learn message
 
 			case decidedVal := <-decidedOut:
+				fmt.Println("--Got the decided out value"); fmt.Println("")
 			// handle the decided value (all the servers, not only the leader)
-				DecidedColor := color.New(color.Bold, color.FgRed).PrintlnFunc()
-				DecidedColor("Multipaxos: Got the Decided Value ", decidedVal )
 				P.HandleDecideValue(decidedVal)
-
 		}
 	}
 }
 
 func (P *Process) HandleDecideValue(decidedVal multipaxos.DecidedValue) {
-	fmt.Println("Im in HandleDecideValue")
 	adu := P.proposer.GetADU()
 	if decidedVal.SlotID > adu+1 {
 		P.BufferedValues[int(adu)+1] = &decidedVal
 		return
 	}
-
 	if !decidedVal.Value.Noop {
 		if P.AccountsList[decidedVal.Value.AccountNum] == nil {
 			// create and store new account with a balance of zero
@@ -522,25 +479,24 @@ func main(){
 		Proc.Leader = Proc.LeaderDetectorStruct.Leader()
 		fmt.Println("------LEADER IS PROCESS: ", Proc.Leader,"------"); fmt.Println("")
 
-		//Subscribe for leader changes
+		//subscribe for leader changes
 		Proc.Subscriber = Proc.LeaderDetectorStruct.Subscribe()
 		go Proc.UpdateSubscribe()    // wait to update the subscriber
 
 		// Add the eventual failure detector
-		hbResponse := make(chan detector.Heartbeat, 10) //channel to communicate with fd
+		hbResponse := make(chan detector.Heartbeat, 8) //channel to communicate with fd
 		Proc.FailureDetectorStruct = detector.NewEvtFailureDetector(Proc.ProcessID, Proc.AllServerIDs, Proc.LeaderDetectorStruct, delta, hbResponse)
 		Proc.FailureDetectorStruct.Start()
 
-		//Paxos Implementation
-		prepareOut := make(chan multipaxos.Prepare, 10)
-		acceptOut := make(chan multipaxos.Accept, 10)
-		promiseOut := make(chan multipaxos.Promise, 10)
-		learnOut := make(chan multipaxos.Learn, 10)
-		decidedOut := make(chan multipaxos.DecidedValue, 10)
+		// --- paxos implementation
+		prepareOut := make(chan multipaxos.Prepare, 8)
+		acceptOut := make(chan multipaxos.Accept, 8)
+		promiseOut := make(chan multipaxos.Promise, 8)
+		learnOut := make(chan multipaxos.Learn, 8)
+		decidedOut := make(chan multipaxos.DecidedValue, 8)
 
 		wg.Add(4)
 		Proc.ReceiveMessagesSendReply(hbResponse)
-		Proc.ReceiveClientValues()
 
 		go Proc.PaxosMethod(prepareOut, acceptOut, promiseOut, learnOut, decidedOut)
 
@@ -557,10 +513,10 @@ func main(){
 	}
 
 	if Proc.Client {
+
+
 		// choose between manual and automatic mode
 		Mode := TerminalInput("Manual mode (m) or Automatic mode (a)? ")
-		Proc.ReceivedValue = make(chan bool, 10)
-		Proc.Stop = make(chan bool, 10)
 
 		if Proc.MainServer == -1 { // if the main server was not chosen
 			Proc.MainServer = RandomFromSlice(Proc.AllServerIDs)
@@ -568,16 +524,15 @@ func main(){
 		}
 
 		wg.Add(2)
-		Proc.GetTheValue()
+		go Proc.GetTheValue()
 
 		if Mode == "m" {
-			AutomaticMode = false
+			go Proc.SendValueManual()
 		} else if Mode == "a" {
-			AutomaticMode = true
+			go Proc.SendValueAutomatic()
 		}
 
 		go Proc.WaitForTimeout()
-		Proc.StartGenerator()
 
 		wg.Wait()
 	}
@@ -589,9 +544,6 @@ func (P *Process) WaitForTimeout() {
 	Warning := color.New(color.FgRed).PrintfFunc()
 	for {
 		select{
-		case <- P.ReceivedValue:
-			P.GenerateTheValue()
-
 		case <- P.TimeoutSignal.C:
 			if P.CatchTimeOut {
 				Warning("*****Got Timout*****"); fmt.Println("")
@@ -599,66 +551,89 @@ func (P *Process) WaitForTimeout() {
 					Warning("Main Server is not alive, choosing a new server randlomy "); fmt.Println("")
 					P.MainServer = RandomFromSlice(P.AllServerIDs)
 				}
-				P.SendValue()  //Resend the value
+				go P.SendValue()  //Resend the value
 			}
-
-		case <- P.Stop :
-			//Print out the stats
-			time.Sleep(time.Second * 1)
-			mean, _ := stats.Mean(P.TimeOfOperations)
-			minimum, _ := stats.Min(P.TimeOfOperations)
-			maximum, _ := stats.Max(P.TimeOfOperations)
-			median, _ := stats.Median(P.TimeOfOperations)
-			variance, _ := stats.Variance(P.TimeOfOperations)
-			stddev := math.Sqrt(variance)
-			percentile, _ := stats.Percentile(P.TimeOfOperations, 99)
-
-
-			Info := color.New(color.Bold, color.FgRed).PrintlnFunc()
-			Info("Mean in seconds: ", mean )
-			Info("Minimum in seconds:", minimum )
-			Info("Maximum in seconds:", maximum )
-			Info("Median in seconds: ", median )
-			Info("Standard deviation in seconds: ", stddev )
-			Info("99 Percentile in seconds: ", percentile )
-
 		}
 	}
 }
 
-func (P *Process) GenerateTheValue() {
-	if AutomaticMode {
-		P.Start = time.Now()
-		OperationValue = rand.Intn(3)
-		AccountNumber = rand.Intn(1000)
-		AmountValue = 0
-		if OperationValue > 0 {
-			AmountValue = rand.Intn(10000)
-		}
-	}else {
-		OperationValue = GetIntFromTerminal("Specify the operation (0: Balance, 1: Deposit, 2: Withdrawal) ")
-		AccountNumber = GetIntFromTerminal("Insert the account number ")
-		AmountValue = 0
-		if OperationValue > 0 {
-			AmountValue = GetIntFromTerminal("Insert the amount ")
+func (P *Process) SendValueManual() {
+	for {
+		if !P.CatchTimeOut {
+			time.Sleep(time.Millisecond * 100)
+
+			OperationValue = GetIntFromTerminal("Specify the operation (0: Balance, 1: Deposit, 2: Withdrawal) ")
+			AccountNumber = GetIntFromTerminal("Insert the account number ")
+			AmountValue = 0
+			if OperationValue > 0 {
+				AmountValue = GetIntFromTerminal("Insert the amount ")
+			}
+			ClientID := strconv.Itoa(P.ProcessID)
+			transaction := bank.Transaction{Op: bank.Operation(OperationValue), Amount: AmountValue}
+
+			P.Value = multipaxos.Value{ClientID: ClientID, ClientSeq: P.MaxSequence, AccountNum: AccountNumber, Txn: transaction}
+
+			P.CatchTimeOut = true
+			go P.SendValue()
 		}
 	}
+}
 
-	ClientID := strconv.Itoa(P.ProcessID)
-	transaction := bank.Transaction{Op: bank.Operation(OperationValue), Amount: AmountValue}
-	P.Value = multipaxos.Value{ClientID: ClientID, ClientSeq: P.MaxSequence, AccountNum: AccountNumber, Txn: transaction}
+func (P *Process) SendValueAutomatic() {
+	startTT := time.Now()
+	for i := 0; i < 501; {
+		if !P.CatchTimeOut {
+			time.Sleep(time.Millisecond * 10)
+			P.Start = time.Now()
+			OperationValue = rand.Intn(3)
+			AccountNumber = rand.Intn(1000)
+			AmountValue = 0
+			if OperationValue > 0 {
+				AmountValue = rand.Intn(10000)
+			}
+			ClientID := strconv.Itoa(P.ProcessID)
+			transaction := bank.Transaction{Op: bank.Operation(OperationValue), Amount: AmountValue}
+			P.Value = multipaxos.Value{ClientID: ClientID, ClientSeq: P.MaxSequence, AccountNum: AccountNumber, Txn: transaction}
 
-	P.SendValue()
+			P.CatchTimeOut = true
+			go P.SendValue()
+			i++
+		}else{
+			time.Sleep(time.Millisecond * 300)
+		}
+	}
+	endTT := time.Now()
+	//Print out the stats
+	time.Sleep(time.Second * 1)
+	mean, _ := stats.Mean(P.TimeOfOperations)
+	minimum, _ := stats.Min(P.TimeOfOperations)
+	maximum, _ := stats.Max(P.TimeOfOperations)
+	median, _ := stats.Median(P.TimeOfOperations)
+	variance, _ := stats.Variance(P.TimeOfOperations)
+	stddev := math.Sqrt(variance)
+	percentile, _ := stats.Percentile(P.TimeOfOperations, 99)
+
+	TotalTime := endTT.Sub(startTT).Seconds()
+
+	Info := color.New(color.Bold, color.FgRed).PrintlnFunc()
+	Info("Mean in seconds: ", mean )
+	Info("Minimum in seconds:", minimum )
+	Info("Maximum in seconds:", maximum )
+	Info("Median in seconds: ", median )
+	Info("Standard deviation in seconds: ", stddev )
+	Info("99 Percentile in seconds: ", percentile )
+	Info("Total time for 500 Operations in seconds: ", TotalTime )
 }
 
 func (P *Process) SendValue(){
 	P.TimeoutSignal = time.NewTicker(time.Second * 10)
-	P.CatchTimeOut = true
-
 	var network bytes.Buffer
+	message := Msg{ Msg: make([]byte,2000),}
 	err := gob.NewEncoder(&network).Encode(P.Value)
 	CheckError(err)
-	message := Msg{Msg : network.Bytes(), MsgType : "ClientValue", Pid : P.ProcessID  }
+	message.Msg = network.Bytes()
+	message.MsgType = "ClientValue"   // type of client value
+	message.Pid = P.ProcessID
 	P.SendMessageToId(message, P.MainServer)
 	fmt.Println("Sent Value :", P.Value, " To Server : ", P.MainServer)
 }
@@ -677,9 +652,6 @@ func  (P *Process) GetTheValue() {
 					}
 				}
 /*RV*/		if newMsg.MsgType == "ResponseToClient" {    //Handle the incoming client value
-					P.CatchTimeOut = false //signal for the client to ignore the timout since we got the value
-					P.End = time.Now()
-
 					var response multipaxos.Response
 					buff := bytes.NewBuffer(newMsg.Msg)
 					err = gob.NewDecoder(buff).Decode(&response)
@@ -688,21 +660,13 @@ func  (P *Process) GetTheValue() {
 					ResponseColor := color.New(color.Bold, color.FgGreen).PrintlnFunc()
 					ResponseColor("Recieved response:", response, " from server :", newMsg.Pid ); fmt.Println("")
 
-					P.TimeOfOperations = append(P.TimeOfOperations, P.End.Sub(P.Start).Seconds())
+					P.CatchTimeOut = false   //signal for the client to ignore the timout since we got the value
 					P.MaxSequence++
-					P.NumOfOperations ++
 
-					if AutomaticMode{
-						if P.NumOfOperations < 500{
-							P.StartGenerator()
-						}else{
-							P.StopGenerator()
-						}
-					}else{
-						P.StartGenerator()
-					}
+					P.End = time.Now()
+					P.TimeOfOperations = append(P.TimeOfOperations, P.End.Sub(P.Start).Seconds())
+
 				}
-
 /*R	*/		if newMsg.MsgType == "Redirect" {    //Handle the redirect message
 					P.MainServer = newMsg.RedirectTo
 					var value multipaxos.Value
@@ -713,11 +677,15 @@ func  (P *Process) GetTheValue() {
 					fmt.Println("The main server is now :", P.MainServer)
 
 					var network bytes.Buffer                // and send the value to the correct server according to the redirect message
+					message := Msg{ Msg: make([]byte,2000),}
 					err := gob.NewEncoder(&network).Encode(value)
 					CheckError(err)
-					message := Msg{ Msg: network.Bytes(), MsgType : "ClientValue", Pid : P.ProcessID }
+					message.Msg = network.Bytes()
+					message.MsgType = "ClientValue"   // type of client value
+					message.Pid = P.ProcessID
 					P.SendMessageToId(message, P.MainServer)
 					fmt.Println("Sent Value :", value, " To Server : ", P.MainServer)
+
 				}
 			}
 			wg.Done()
@@ -725,13 +693,9 @@ func  (P *Process) GetTheValue() {
 	}
 }
 
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-func (P *Process) StopGenerator() {
-	P.Stop <- true // stop the automatic send
-}
-func (P *Process) StartGenerator() {
-	P.ReceivedValue <- true
-}
 func (P *Process) ResetTicker() {
     P.TimeoutSignal = time.NewTicker(time.Second * 10)
 }

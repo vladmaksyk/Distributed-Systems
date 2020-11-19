@@ -87,20 +87,13 @@ type Process struct {
 	BridgeChannel  chan multipaxos.Response
 }
 
-//var Address = []string{"localhost:1200","localhost:1201", "localhost:1202","localhost:1203","localhost:1204","localhost:1205"}
-//var Address = []string{"192.168.1.1/16", "192.168.1.2/16", "192.168.1.3/16","192.168.1.4/16","192.168.1.5/16"}
-//var Address = []string{"pitter22:12100", "pitter23:12101", "pitter24:12102"} //, "localhost:12103", "localhost:12104", "localhost:12105"}
-
 var (
 	addrs = []*string{
-		flag.String("client1", "localhost:8080", "http service address"),
-		flag.String("client2", "localhost:8888", "http service address"),
+		flag.String("client1", "127.0.0.1:8080", "http service address"),
+		flag.String("client2", "127.0.0.1:8888", "http service address"),
 	}
 
 	Address = []string{"localhost:1200","localhost:1201", "localhost:1202"}
-	//Address = []string{"pitter1:12100","pitter2:12100", "pitter3:12100"}
-	//Address = []string{"pitter1:12100","pitter2:12100", "pitter3:12100"}
-
 	wg = sync.WaitGroup{}
 	upgrader = websocket.Upgrader{}
 	SuspectChangeChan chan int  //new
@@ -455,6 +448,7 @@ func (P *Process) HandleDecideValue(decidedVal multipaxos.DecidedValue) (msg mul
 				P.AccountsList[decidedVal.Value.Txn.To.Number].Process(Trans2)
 			}
 		} else {
+
 			if P.AccountsList[decidedVal.Value.AccountNum] == nil {
 				// create and store new account with a balance of zero
 				P.AccountsList[decidedVal.Value.AccountNum] = &bank.Account{Number: decidedVal.Value.AccountNum, Balance: 0}
@@ -462,6 +456,8 @@ func (P *Process) HandleDecideValue(decidedVal multipaxos.DecidedValue) (msg mul
 			// for the all other transactions just call a simple process function
 			TransactionResult = P.AccountsList[decidedVal.Value.AccountNum].Process(decidedVal.Value.Txn)
 		}
+
+
 		// create response with appropriate transaction result, client id and client seq
 		Response := multipaxos.Response{ClientID: decidedVal.Value.ClientID, ClientSeq: decidedVal.Value.ClientSeq, TxnRes: TransactionResult}
 
@@ -477,19 +473,6 @@ func (P *Process) HandleDecideValue(decidedVal multipaxos.DecidedValue) (msg mul
 	return msg
 }
 
-// function that load the html file of the client
-func (P *Process) ServeHome(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	http.ServeFile(w, r, "home.html")
-}
-// MAIN FUNCTION FOR DELIVER THE MESSAGE FROM THE CLIENT TO PAXOS
 func (P *Process) WebSocket() {
 	// only the leader communicate with the client(s)
 	if P.ProcessID == P.Leader {
@@ -513,8 +496,11 @@ func (P *Process) ServeWs(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		var data DataFromClient
+
 		err := ws.ReadJSON(&data) // read JSON data
 		if err != nil {
+			fmt.Println(data)
+
 			fmt.Println(err)
 			break
 		}
@@ -531,8 +517,19 @@ func (P *Process) ServeWs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-
-
+// function that load the html file of the client
+func (P *Process) ServeHome(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	http.ServeFile(w, r, "home.html")
+}
+// MAIN FUNCTION FOR DELIVER THE MESSAGE FROM THE CLIENT TO PAXOS
 func (P *Process) HandleMessage(data DataFromClient) (response multipaxos.Response) {
 	var (
 		message multipaxos.Value
@@ -548,6 +545,7 @@ func (P *Process) HandleMessage(data DataFromClient) (response multipaxos.Respon
 	case "Transfer":
 		txn.Op = 3
 		accountNumTo, _ := strconv.Atoi(data.To)
+
 		if P.AccountsList[accountNumTo] == nil {
 			// if there isn't an account to transfer the money, initialize it
 			P.AccountsList[accountNumTo] = &bank.Account{Number: accountNumTo, Balance: 0}
@@ -622,6 +620,7 @@ func main(){
 
 		wg.Add(4)
 		Proc.ReceiveMessagesSendReply(hbResponse)
+
 
 		go Proc.PaxosMethod(prepareOut, acceptOut, promiseOut, learnOut, decidedOut)
 

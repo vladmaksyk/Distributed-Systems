@@ -2,7 +2,9 @@
 
 package multipaxos
 
-import "fmt"
+
+
+
 
 // Learner represents a learner as defined by the Multi-Paxos algorithm.
 type Learner struct {
@@ -44,14 +46,14 @@ func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner 
 	return &Learner{
 		ProcessId: id,
 		NumOfProcesses: nrOfNodes,
-		quorum: nrOfNodes/2 +1 ,
+		quorum: nrOfNodes/2 + 1,
 		decidedOut: decidedOut,
 		PreviousSender: -1,
 		LearnMesegesRecieved : 0,
 		quorumRound : Round(0),
 		SameValSameRoundCount: -1,
 
-		learnIn: make(chan Learn, 10),
+		learnIn: make(chan Learn, 8),
 		stop:    make(chan struct{}),
 
 	}
@@ -122,11 +124,9 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 	}
 
 	if len(l.SlotIdUniqueSendersIds[learn.Slot]) >= l.quorum{ // if a slot reached a quorum of senders output its current number and Value
-
 		output = true
 		l.Vval = l.SlotIdValue[learn.Slot]
 		l.SlotId = learn.Slot
-		fmt.Println("l.SlotId, output:",l.SlotId, output)
 
 		l.SlotIdUniqueSendersIds[learn.Slot] = nil //after writing the output set the unique senders to 0 again
 	}
